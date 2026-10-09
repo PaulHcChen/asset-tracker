@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#173b70">
+<link rel="manifest" href="manifest.webmanifest">
+<title>我的資產紀錄</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Noto Sans TC",sans-serif;color:#172033;background:#f3f6fb}
+*{box-sizing:border-box}body{margin:0;padding:16px 14px 32px;max-width:760px;margin-inline:auto}
+header{background:#173b70;color:#fff;padding:20px;border-radius:18px;margin-bottom:14px}
+h1{font-size:1.45rem;margin:0 0 6px}header p{margin:0;color:#dbeafe;font-size:.92rem}
+.card{background:#fff;border:1px solid #e1e7f0;border-radius:16px;padding:16px;margin:12px 0;box-shadow:0 2px 8px #1720330a}
+h2{font-size:1.08rem;margin:0 0 14px}
+label{display:block;font-size:.9rem;font-weight:650;margin:12px 0 6px}
+input{font:inherit;width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;color:#172033}
+button{font:inherit;font-weight:650;border:0;border-radius:10px;padding:11px 13px;cursor:pointer}
+.primary{background:#2563eb;color:#fff;width:100%;margin-top:14px}
+.secondary{background:#e8eef8;color:#173b70}
+.danger{background:#fee2e2;color:#991b1b}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.actions button{flex:1;min-width:110px}
+.notice{font-size:.86rem;color:#475569;line-height:1.5;margin-top:10px}
+.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.metric{background:#f1f5f9;padding:10px;border-radius:12px;min-width:0}
+.metric span{display:block;color:#475569;font-size:.76rem;margin-bottom:5px}
+.metric strong{display:block;font-size:.95rem;overflow-wrap:anywhere}
+.chart-wrap{width:100%;overflow:hidden}
+canvas{width:100%;height:300px;display:block}
+table{width:100%;border-collapse:collapse;font-size:.88rem}
+th,td{padding:9px 6px;border-bottom:1px solid #e2e8f0;text-align:right}
+th:first-child,td:first-child{text-align:left}
+td button{padding:6px 8px;font-size:.8rem}
+.table-wrap{overflow-x:auto}
+.empty{color:#64748b;text-align:center;padding:20px 0}
+footer{font-size:.8rem;color:#64748b;line-height:1.5;padding:6px}
+@media(max-width:390px){body{padding:10px}.card{padding:12px}.summary{grid-template-columns:1fr}.metric{display:flex;justify-content:space-between;gap:8px}.metric span{margin:0}.metric strong{text-align:right}}
+</style>
+</head>
+<body>
+<header>
+  <h1>我的資產紀錄</h1>
+  <p>離線記錄股票淨值、現金與總資產</p>
+</header>
+
+<section class="card">
+  <h2 id="formTitle">新增／更新資產</h2>
+  <form id="assetForm">
+    <label for="date">日期</label>
+    <input id="date" type="date" required>
+    <label for="stock">股票淨值（元）</label>
+    <input id="stock" type="number" min="0" step="0.01" inputmode="decimal" placeholder="例如：1250000" required>
+    <label for="cash">現金（元）</label>
+    <input id="cash" type="number" min="0" step="0.01" inputmode="decimal" placeholder="例如：350000" required>
+    <button class="primary" type="submit">儲存資產紀錄</button>
+    <p class="notice">同一天再次儲存會更新該日資料，不會產生重複日期。總資產會自動計算。</p>
+  </form>
+</section>
+
+<section class="card">
+  <h2>目前資產</h2>
+  <div class="summary">
+    <div class="metric"><span>股票淨值</span><strong id="latestStock">—</strong></div>
+    <div class="metric"><span>現金</span><strong id="latestCash">—</strong></div>
+    <div class="metric"><span>總資產</span><strong id="latestTotal">—</strong></div>
+  </div>
+  <p id="latestDate" class="notice">尚無紀錄</p>
+</section>
+
+<section class="card">
+  <h2>資產趨勢圖</h2>
+  <div class="chart-wrap"><canvas id="chart" aria-label="股票淨值、現金與總資產折線圖"></canvas></div>
+  <p class="notice">X 軸為日期，Y 軸為金額（元）。圖表依日期排序。</p>
+</section>
+
+<section class="card">
+  <h2>歷史紀錄</h2>
+  <div class="table-wrap" id="history"></div>
+</section>
+
+<section class="card">
+  <h2>資料備份與還原</h2>
+  <div class="actions">
+    <button class="secondary" id="exportJson">匯出 JSON 備份</button>
+    <button class="secondary" id="exportCsv">匯出 CSV</button>
+  </div>
+  <label for="importFile">從備份檔匯入</label>
+  <input id="importFile" type="file" accept=".json,application/json">
+  <div class="actions" style="margin-top:10px">
+    <button class="secondary" id="mergeImport">合併匯入</button>
+    <button class="secondary" id="replaceImport">完整還原（取代現有資料）</button>
+  </div>
+  <p class="notice">建議定期匯出 JSON 備份並存到手機檔案或其他安全位置。合併匯入時，同日期以備份檔中的資料為準；完整還原會取代手機目前全部紀錄。</p>
+</section>
+<footer>
+  資料儲存在目前瀏覽器的本機資料區，不會由本程式主動上傳。若清除瀏覽器資料、改用其他瀏覽器或移除相關資料，紀錄可能遺失，請定期備份。此原型未連接任何雲端服務。
+</footer>
+
+<script>
+(() => {
+  const DB_NAME = 'personal-asset-tracker';
+  const STORE = 'dailyAssets';
+  let db;
+  let selectedImport = null;
+  const $ = id => document.getElementById(id);
+  const fmt = n => Number(n).toLocaleString('zh-TW',{maximumFractionDigits:2});
+  const today = new Date();
+  $('date').value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+
+  function openDb(){
+    return new Promise((resolve,reject)=>{
+      if(!('indexedDB' in window)){reject(new Error('此瀏覽器不支援本機資料庫'));return;}
+      const req=indexedDB.open(DB_NAME,1);
+      req.onupgradeneeded=()=>{const d=req.result;if(!d.objectStoreNames.contains(STORE))d.createObjectStore(STORE,{keyPath:'date'});};
+      req.onsuccess=()=>{db=req.result;resolve(db);};
+      req.onerror=()=>reject(req.error);
+    });
+  }
+  function allRecords(){
+    return new Promise((resolve,reject)=>{
+      const req=db.transaction(STORE,'readonly').objectStore(STORE).getAll();
+      req.onsuccess=()=>resolve(req.result.sort((a,b)=>a.date.localeCompare(b.date)));
+      req.onerror=()=>reject(req.error);
+    });
+  }
+  function putRecord(record){
+    return new Promise((resolve,reject)=>{
+      const tx=db.transaction(STORE,'readwrite');
+      tx.objectStore(STORE).put(record);
+      tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
+    });
+  }
+  function replaceAll(records){
+    return new Promise((resolve,reject)=>{
+      const tx=db.transaction(STORE,'readwrite'), store=tx.objectStore(STORE);
+      store.clear();
+      records.forEach(r=>store.put(r));
+      tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
+    });
+  }
+  function validRecord(r){
+    return r && typeof r.date==='string' && /^\d{4}-\d{2}-\d{2}$/.test(r.date) &&
+      Number.isFinite(Number(r.stock)) && Number(r.stock)>=0 &&
+      Number.isFinite(Number(r.cash)) && Number(r.cash)>=0;
+  }
+  async function render(){
+    const rows=await allRecords();
+    const latest=rows[rows.length-1];
+    $('latestStock').textContent=latest?fmt(latest.stock):'—';
+    $('latestCash').textContent=latest?fmt(latest.cash):'—';
+    $('latestTotal').textContent=latest?fmt(Number(latest.stock)+Number(latest.cash)):'—';
+    $('latestDate').textContent=latest?`最新紀錄日期：${latest.date}`:'尚無紀錄';
+    if(!rows.length){$('history').innerHTML='<div class="empty">尚無資產紀錄，請先新增一筆。</div>';}
+    else {
+      const body=rows.slice().reverse().map(r=>`<tr><td>${r.date}</td><td>${fmt(r.stock)}</td><td>${fmt(r.cash)}</td><td>${fmt(Number(r.stock)+Number(r.cash))}</td><td><button class="secondary" data-edit="${r.date}">編輯</button> <button class="danger" data-delete="${r.date}">刪除</button></td></tr>`).join('');
+      $('history').innerHTML=`<table><thead><tr><th>日期</th><th>股票</th><th>現金</th><th>總資產</th><th>操作</th></tr></thead><tbody>${body}</tbody></table>`;
+    }
+    drawChart(rows);
+  }
+  $('assetForm').addEventListener('submit',async e=>{
+    e.preventDefault();
+    const record={date:$('date').value,stock:Number($('stock').value),cash:Number($('cash').value)};
+    if(!validRecord(record)){alert('請輸入正確的日期、股票淨值與現金。');return;}
+    const existing=(await allRecords()).some(r=>r.date===record.date);
+    await putRecord(record);
+    alert(existing?'已更新這一天的資產紀錄。':'已新增資產紀錄。');
+    $('stock').value='';$('cash').value='';
+    await render();
+  });
+  $('history').addEventListener('click',async e=>{
+    const edit=e.target.dataset.edit, del=e.target.dataset.delete;
+    if(edit){
+      const r=(await allRecords()).find(x=>x.date===edit);if(!r)return;
+      $('date').value=r.date;$('stock').value=r.stock;$('cash').value=r.cash;
+      $('formTitle').textContent='編輯資產紀錄';
+      window.scrollTo({top:0,behavior:'smooth'});
+    }
+    if(del && confirm(`確定刪除 ${del} 的紀錄？`)){
+      await new Promise((resolve,reject)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).delete(del);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+      await render();
+    }
+  });
+  function download(name,content,type){
+    const blob=new Blob([content],{type});
+    const url=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1500);
+  }
+  $('exportJson').onclick=async()=>{
+    const records=await allRecords();
+    download(`資產備份_${todayStamp()}.json`,JSON.stringify({format:'personal-asset-tracker',version:1,exportedAt:new Date().toISOString(),records},null,2),'application/json;charset=utf-8');
+  };
+  $('exportCsv').onclick=async()=>{
+    const rows=await allRecords();
+    const csv=[['日期','股票淨值','現金','總資產'],...rows.map(r=>[r.date,r.stock,r.cash,Number(r.stock)+Number(r.cash)])]
+      .map(row=>row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+    download(`資產紀錄_${todayStamp()}.csv`,'\ufeff'+csv,'text/csv;charset=utf-8');
+  };
+  function todayStamp(){return new Date().toISOString().slice(0,10);}
+  $('importFile').addEventListener('change',async e=>{
+    selectedImport=null;const f=e.target.files[0];if(!f)return;
+    try{
+      const parsed=JSON.parse(await f.text());
+      const records=Array.isArray(parsed)?parsed:parsed.records;
+      if(!Array.isArray(records)||!records.every(validRecord))throw new Error('格式錯誤');
+      const unique=new Map();records.forEach(r=>unique.set(r.date,{date:r.date,stock:Number(r.stock),cash:Number(r.cash)}));
+      selectedImport=[...unique.values()].sort((a,b)=>a.date.localeCompare(b.date));
+      alert(`已讀取 ${selectedImport.length} 筆有效紀錄，請選擇合併匯入或完整還原。`);
+    }catch(err){alert('無法讀取備份檔。請選擇本 App 匯出的 JSON 備份檔。');}
+  });
+  $('mergeImport').onclick=async()=>{
+    if(!selectedImport){alert('請先選擇有效的 JSON 備份檔。');return;}
+    for(const r of selectedImport)await putRecord(r);
+    alert(`已合併匯入 ${selectedImport.length} 筆紀錄。同日期以備份檔內容為準。`);
+    selectedImport=null;$('importFile').value='';await render();
+  };
+  $('replaceImport').onclick=async()=>{
+    if(!selectedImport){alert('請先選擇有效的 JSON 備份檔。');return;}
+    if(!confirm(`這會刪除目前手機上的所有紀錄，改成備份檔中的 ${selectedImport.length} 筆資料。確定繼續？`))return;
+    await replaceAll(selectedImport);
+    alert('已完成還原。');selectedImport=null;$('importFile').value='';await render();
+  };
+  function drawChart(rows){
+    const c=$('chart'),ctx=c.getContext('2d'),dpr=window.devicePixelRatio||1;
+    const w=Math.max(280,c.clientWidth),h=300;c.width=w*dpr;c.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
+    if(!rows.length){ctx.fillStyle='#64748b';ctx.font='14px sans-serif';ctx.textAlign='center';ctx.fillText('新增紀錄後會顯示趨勢圖',w/2,h/2);return;}
+    const pad={l:58,r:12,t:22,b:48},pw=w-pad.l-pad.r,ph=h-pad.t-pad.b;
+    const series=[{key:'stock',label:'股票淨值',color:'#2563eb'},{key:'cash',label:'現金',color:'#16a34a'},{key:'total',label:'總資產',color:'#ea580c'}];
+    const vals=rows.flatMap(r=>[Number(r.stock),Number(r.cash),Number(r.stock)+Number(r.cash)]);
+    let max=Math.max(...vals,1);max=max*1.12;
+    ctx.font='10px sans-serif';ctx.textAlign='right';ctx.textBaseline='middle';
+    for(let i=0;i<=4;i++){
+      const y=pad.t+ph*i/4, v=max*(1-i/4);
+      ctx.strokeStyle='#e2e8f0';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(w-pad.r,y);ctx.stroke();
+      ctx.fillStyle='#64748b';ctx.fillText(compact(v),pad.l-7,y);
+    }
+    const x=i=>rows.length===1?pad.l+pw/2:pad.l+pw*i/(rows.length-1);
+    const y=v=>pad.t+ph*(1-v/max);
+    series.forEach(s=>{
+      ctx.strokeStyle=s.color;ctx.lineWidth=2.4;ctx.beginPath();
+      rows.forEach((r,i)=>{const v=s.key==='total'?Number(r.stock)+Number(r.cash):Number(r[s.key]);if(i===0)ctx.moveTo(x(i),y(v));else ctx.lineTo(x(i),y(v));});
+      ctx.stroke();
+      rows.forEach((r,i)=>{const v=s.key==='total'?Number(r.stock)+Number(r.cash):Number(r[s.key]);ctx.fillStyle=s.color;ctx.beginPath();ctx.arc(x(i),y(v),3,0,Math.PI*2);ctx.fill();});
+    });
+    const tickCount=Math.min(rows.length,5);ctx.fillStyle='#475569';ctx.textAlign='center';ctx.textBaseline='top';ctx.font='10px sans-serif';
+    for(let j=0;j<tickCount;j++){const idx=tickCount===1?0:Math.round(j*(rows.length-1)/(tickCount-1));ctx.fillText(rows[idx].date.slice(5),x(idx),pad.t+ph+8);}
+    let lx=pad.l;
+    ctx.textAlign='left';ctx.textBaseline='middle';ctx.font='10px sans-serif';
+    series.forEach(s=>{ctx.fillStyle=s.color;ctx.fillRect(lx,pad.t-15,9,9);ctx.fillStyle='#334155';ctx.fillText(s.label,lx+13,pad.t-10);lx+=s.label.length*11+32;});
+  }
+  function compact(n){if(n>=1e8)return (n/1e8).toFixed(1)+'億';if(n>=1e4)return (n/1e4).toFixed(0)+'萬';return Math.round(n).toLocaleString('zh-TW');}
+  window.addEventListener('resize',async()=>{try{drawChart(await allRecords());}catch{}});
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+  }
+  openDb().then(render).catch(err=>{alert('本機資料庫無法啟動。請使用支援 IndexedDB 的 Chrome，並透過 HTTPS 網址開啟此 App。錯誤：'+err.message);});
+})();
+</script>
+</body>
+</html>
